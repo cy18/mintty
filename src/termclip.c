@@ -9,6 +9,14 @@
 #include "child.h"
 #include "charset.h"
 
+#include <winnls.h>
+#include <richedit.h>
+#include <shellapi.h>
+#include <wtypes.h>
+#include <objidl.h>
+#include <oleidl.h>
+#include <sys/cygwin.h>
+
 /*
  * Helper routine for term_copy(): growing buffer.
  */
@@ -177,21 +185,37 @@ term_open(void)
 void
 term_paste(wchar *data, uint len)
 {
-  term_cancel_paste();
-
-  term.paste_buffer = newn(wchar, len);
-  term.paste_len = term.paste_pos = 0;
-
-  // Copy data to the paste buffer, converting both Windows-style \r\n and
-  // Unix-style \n line endings to \r, because that's what the Enter key sends.
-  for (uint i = 0; i < len; i++) {
-    wchar wc = data[i];
-    if (wc != '\n')
-      term.paste_buffer[term.paste_len++] = wc;
-    else if (i == 0 || data[i - 1] != '\r')
-      term.paste_buffer[term.paste_len++] = '\r';
-  }
-
+    term_cancel_paste();
+  
+    term.paste_buffer = newn(wchar, len);
+    term.paste_len = term.paste_pos = 0;
+    
+    if ((data[1] == ':') && ((data[0] >= 'a' && data[0] <='z')
+                            || (data[0] >= 'A' && data[0] <='Z'))){
+        char *tmp_data = path_win_w_to_posix(data);
+        uint len2 = MultiByteToWideChar(CP_ACP, 0, tmp_data, -1, 0, 0);
+        wchar data2[len2];
+        MultiByteToWideChar(CP_ACP, 0, tmp_data, -1, data2, len2);
+        // Copy data to the paste buffer, converting both Windows-style \r\n and
+        // Unix-style \n line endings to \r, because that's what the Enter key sends.
+        for (uint i = 0; i < len2; i++) {
+          wchar wc = data2[i];
+          if (wc != '\n')
+            term.paste_buffer[term.paste_len++] = wc;
+          else if (i == 0 || data2[i - 1] != '\r')
+            term.paste_buffer[term.paste_len++] = '\r';
+        }
+    }else{
+        // Copy data to the paste buffer, converting both Windows-style \r\n and
+        // Unix-style \n line endings to \r, because that's what the Enter key sends.
+        for (uint i = 0; i < len; i++) {
+          wchar wc = data[i];
+          if (wc != '\n')
+            term.paste_buffer[term.paste_len++] = wc;
+          else if (i == 0 || data[i - 1] != '\r')
+            term.paste_buffer[term.paste_len++] = '\r';
+        }
+    }
   if (term.bracketed_paste)
     child_write("\e[200~", 6);
   term_send_paste();
@@ -383,4 +407,3 @@ term_cmd(char * cmdpat)
       child_write("\e[201~", 6);
   }
 }
-
